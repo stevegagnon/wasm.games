@@ -1,0 +1,64 @@
+<html>
+
+<head>
+  <style>
+    #editor {
+      background: blue;
+      color: white;
+      font-family: monospace;
+      font-weight: bold;
+      height: 500px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>WebAssembly Compiler</h1>
+  <button type="button" id="compile_button" disabled>compile 2</button>
+  <div id="editor" contenteditable="true"></div>
+  <div id="links"></div>
+
+
+  <script>
+    const compile_button = document.getElementById('compile_button');
+    const editor = document.getElementById('editor');
+    const links = document.getElementById('links');
+
+    fetch('compile.wat')
+      .then(response => response.text())
+      .then(text => editor.innerText = text);
+
+    WebAssembly.instantiateStreaming(fetch('compile.wasm'))
+      .then(obj => {
+        let mem = new Uint8Array(obj.instance.exports.memory.buffer);
+
+        compile_button.disabled = false;
+        compile_button.addEventListener('click', () => {
+          const code = editor.innerText;
+
+          for (let i = code.length - 1; i >= 0; --i) {
+            mem[i] = code.charCodeAt(i);
+          }
+
+          let out = obj.instance.exports.main();
+
+          let out_len = mem[out] + (mem[out + 1] << 8) + (mem[out + 2] << 16) + (mem[out + 3] << 24);
+          
+          out += 4;
+
+          if (0x6d7361 == mem[out + 1] + (mem[out + 2] << 8) + (mem[out + 3] << 16)) {
+            let compilerWasm = mem.slice(out, out + out_len);
+            const out_blob = new Blob([mem.slice(out, out + out_len)], {type : 'application/wasm'})
+            const anchor = document.createElement('a');
+            anchor.href = URL.createObjectURL(out_blob);
+            anchor.innerText = 'download';
+            anchor.download = 'out.wasm';
+            links.appendChild(anchor);
+          }
+        });
+      });
+  </script>
+</body>
+
+</html>
