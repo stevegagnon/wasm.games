@@ -18,16 +18,18 @@ MAP_DATA       16384  reserved for tile engine
 SPRITES         3328  256 sprites
 
 WAVEFORMS        128  16 waveforms each 32 x f32 values
-VOICES           464  16 voices
+VOICES           512  16 voices
 PATTERNS        2560  8x10x32 u8 notes
 SONG             384  8x48 u8 pattern indexes
 PLAYING_VOICE      4  16 2-bit voice status, [0] = playing, [1] = mute
-VOICE_STATES     192  16 voice states
+VOICE_STATES     256  16 voice states
 ```
 
 ```
 SPRITE
 INDEX          u8
+X              i16
+Y              i16
 FLIP_X         u8
 FLIP_Y         u8
 SIZE           u8
@@ -36,12 +38,10 @@ ALGO           u8
 SPEED          u8
 SCALE          u8
 ROTATE         u8
-X              i16
-Y              i16
 ```
 
 ```
-VOICE
+VOICE 29/32 bytes used
 LFO_FX_FREQ    u8
 LFO_FREQ       u8
 LFO_AMT        u8
@@ -74,7 +74,7 @@ FX_PAN_AMT     u8
 ```
 
 ```
-VOICE STATE
+VOICE STATE 12/16 bytes
 POSITION       i32
 LOW            f32
 BAND           f32
