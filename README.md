@@ -18,10 +18,13 @@
 0x0000  SPRITES                4096  256 16 byte sprites
 
 0x0000  WAVEFORMS              2048  16 waveforms each 32 x f32 values
+
+0x0000  SONG_LENGTH               1  u8 position to stop song
+0x0000  PATTERN_ROW_LEN           2  samples in every pattern row, calculated from BPM
 0x0000  VOICES                  512  16 voices
 0x0000  PATTERNS               2560  8x10x32 u8 notes
 0x0000  SONG                    384  8x48 u8 pattern indexes
-0x0000  PATTERN_ROW_LEN           2  samples in every pattern row, calculated from BPM
+
 0x0000  SONG_POSITION             1  current row in song
 0x0000  PATTERN_POSITION          1  current row in pattern
 0x0000  PATTERN_ROW_POSITION      2  current position in pattern row
