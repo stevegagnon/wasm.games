@@ -1,11 +1,13 @@
 const SAMPLE_RATE = 44100;
-const WAVETABLE_SAMPLES = 32;
-const WAVETABLE_MASK = 32 - 1;
+const WAVETABLE_SAMPLES = 64;
+const WAVETABLE_MASK = 64 - 1;
 const SYNTH_SAMPLES_PER = SAMPLE_RATE / 60;
 const VOICES_COUNT = 16;
+const DELAY_LINE_LENGTH = SAMPLE_RATE;
+const SONG_CHANNELS = 8;
 
 async function go(core: string) {
-  const { pow, sin } = Math;
+  const { pow, sin, random } = Math;
   const mem = new WebAssembly.Memory({ initial: 10, maximum: 10 });
   const obj = await WebAssembly.instantiateStreaming(fetch(core), { js: { mem } });
 
@@ -14,11 +16,13 @@ async function go(core: string) {
   const pallete = new Uint32Array(mem.buffer, 0xffff, 256);
   const waveforms = new Float32Array(mem.buffer, 0xffff, 512);
   const voices = new Uint8Array(mem.buffer, 0xffff, VOICES_COUNT * 32);
+  const patterns = new Uint8Array(mem.buffer, 0xffff, 8 * 10 * 32);
+  const song = new Uint8Array(mem.buffer, 0xffff, 8 * 48);
 
-  let synth_out_left = new Float32Array(SYNTH_SAMPLES_PER);
-  let synth_out_right = new Float32Array(SYNTH_SAMPLES_PER);
-  let synth_right_buffer = new Float32Array(SYNTH_SAMPLES_PER);
-  let synth_left_buffer = new Float32Array(SYNTH_SAMPLES_PER);
+  const delayLines = [];
+  for (let i = 0; i < 32; ++i) {
+    delayLines[i] = new Float32Array(DELAY_LINE_LENGTH);
+  }
 
   for (let i = 0; i < WAVETABLE_SAMPLES; ++i) {
     let v = i / WAVETABLE_SAMPLES;
@@ -85,12 +89,21 @@ async function go(core: string) {
         }
       }
     },
-    () => {
+    (out_left, out_right, out_length) => {
+      let 
       let rowLen = dv.getUint16(ADDR_PATTERN_ROW_LEN);
-
       let nf = (n, oct, det, detune) => (0.00390625 * pow(1.059463094, (n + (oct - 8) * 12 + det) - 128)) * (1 + 0.0008 * detune) * WAVETABLE_SAMPLES;
 
+      let song_position = dv.getUint8(ADDR_SONG_POSITION);
+      let pattern_position = dv.getUint8(ADDR_PATTERN_POSITION);
+      let pattern_row_position = dv.getUint16(ADDR_PATTERN_ROW_POSITION);
+
       for (let i = 0; i < VOICES_COUNT; ++i) {
+        if (i <= SONG_CHANNELS) {
+          // add note events
+        }
+
+
         let [
           lfo_fx_freq,
           lfo_freq,
@@ -121,13 +134,19 @@ async function go(core: string) {
           fx_delay_amt,
           fx_pan_freq,
           fx_pan_amt,
-        ] = voices.slice(i * 16);
+        ] = voices.slice(i * 32);
 
+        let state_addr = ADDR_VOICE_STATES + i * 16;
+
+        let state_position = dv.getInt32(state_addr);
+        let state_low = dv.getFloat32(state_addr + 4);
+        let state_band = dv.getFloat32(state_addr + 8);
+        let c1 = dv.getFloat32(state_addr + 12);
+        let c2 = dv.getFloat32(state_addr + 16);
 
         let len = env_attack + env_sustain + env_release;
         let wt1 = osc1_waveform * WAVETABLE_SAMPLES;
         let wt2 = osc2_waveform * WAVETABLE_SAMPLES;
-        let pos = 0;
 
         fx_delay_time = (fx_delay_time * rowLen) >> 1;
         fx_delay_amt /= 255;
@@ -135,97 +154,83 @@ async function go(core: string) {
         lfo_freq = pow(2, lfo_freq - 8) / rowLen * WAVETABLE_SAMPLES;
         env_master /= 1e5;
         fx_pan_amt /= 512;
+        lfo_amt /= 512;
 
-        synth_right_buffer.fill(0);
-
-        if (lfo_amt) {
-          lfo_amt /= 512;
-          for (i = 0; i < SYNTH_SAMPLES_PER; ++i) {
-            synth_left_buffer[i] = waveforms[lfo_waveform * WAVETABLE_SAMPLES + ((i * lfo_freq) & WAVETABLE_MASK)] * lfo_amt + 0.5;
-          }
-        }
-
-        for (let pattern of p) {
-          let rows = 32;
-          if (pattern) {
-            for (let n of c[pattern - 1].n) {
-              if (n) {
-                let c1 = 0, c2 = 0;
-                let o1t = nf(n, osc1_oct, osc1_det, osc1_detune);
-                let o2t = nf(n, osc2_oct, osc2_det, osc2_detune);
-
-                for (i = len - 1; i >= 0; --i) {
-                  let k = i + pos;
-
-                  // Envelope
-                  let e = i < env_attack ? i / env_attack
-                    : i >= env_attack + env_sustain ? 1 - (i - env_attack - env_sustain) / env_release
-                      : 1;
-
-                  // Oscillator 1
-                  let t = o1t;
-                  if (lfo_osc1_freq) t += synth_left_buffer[k];
-                  if (osc1_xenv) t *= e * e;
-                  c1 += t;
-                  let rsample = waveforms[wt1 + (c1 & WAVETABLE_MASK)] * osc1_vol;
-
-                  // Oscillator 2
-                  t = o2t;
-                  if (osc2_xenv) t *= e * e;
-                  c2 += t;
-                  rsample += waveforms[wt2 + (c2 & WAVETABLE_MASK)] * osc2_vol;
-
-                  // Noise oscillator
-                  if (noise_fader) rsample += (2 * random() - 1) * noise_fader * e;
-
-                  synth_right_buffer[k] += rsample * e;
-                }
-              }
-              pos += rowLen;
-              --rows;
-            }
-          }
-
-          pos += rowLen * rows;
-        }
-
-        let low = 0;
-        let band = 0;
         let q = fx_resonance / 255;
 
-        for (i = 0; i < SYNTH_SAMPLES_PER; ++i) {
-          let s = synth_right_buffer[i];
+
+        let o1t = nf(n, osc1_oct, osc1_det, osc1_detune);
+        let o2t = nf(n, osc2_oct, osc2_det, osc2_detune);
+
+
+        for (i = 0; i < out_length; ++i) {
+          let lfo = lfo_amt ? waveforms[lfo_waveform * WAVETABLE_SAMPLES + ((state_position * lfo_freq) & WAVETABLE_MASK)] * lfo_amt + 0.5 : 0;
+
+          let s = 0;
+
+          // Envelope
+          let e = state_position < env_attack ? state_position / env_attack
+            : state_position >= env_attack + env_sustain ? 1 - (state_position - env_attack - env_sustain) / env_release
+              : 1;
+
+          // Oscillator 1
+          let t = o1t;
+          if (lfo_osc1_freq) t += lfo;
+          if (osc1_xenv) t *= e * e;
+          c1 += t;
+          s = waveforms[wt1 + (c1 & WAVETABLE_MASK)] * osc1_vol;
+
+          // Oscillator 2
+          t = o2t;
+          if (osc2_xenv) t *= e * e;
+          c2 += t;
+          s += waveforms[wt2 + (c2 & WAVETABLE_MASK)] * osc2_vol;
+
+          // Noise oscillator
+          if (noise_fader) s += (2 * random() - 1) * noise_fader * e;
 
           // State variable filter
-          let f = fx_freq;;
-          if (lfo_fx_freq) f *= synth_left_buffer[i];
+          let f = fx_freq;
+          if (lfo_fx_freq) f *= lfo;
           f = 1.5 * waveforms[(f * WAVETABLE_SAMPLES / 2 / SAMPLE_RATE) & WAVETABLE_MASK];
-          low += f * band;
-          let high = q * (s - band) - low;
-          band += f * high;
+          state_low += f * state_band;
+          let high = q * (s - state_band) - state_low;
+          state_band += f * high;
 
           s = fx_filter === 1 ? high
-            : fx_filter === 2 ? low
-              : fx_filter === 3 ? band
-                : fx_filter === 4 ? low + high
+            : fx_filter === 2 ? state_low
+              : fx_filter === 3 ? state_band
+                : fx_filter === 4 ? state_low + high
                   : s;
 
           // Panning & master volume
-          let t = waveforms[(i * fx_pan_freq) & WAVETABLE_MASK] * fx_pan_amt + 0.5;
+          t = waveforms[(state_position * fx_pan_freq) & WAVETABLE_MASK] * fx_pan_amt + 0.5;
           s *= env_master;
 
           let rsample = (s * t);
           let lsample = (s * (1 - t));
 
-          if (fx_delay_amt && i >= fx_delay_time) {
-            rsample += synth_right_buffer[i - fx_delay_time] * fx_delay_amt;
-            lsample += synth_left_buffer[i - fx_delay_time] * fx_delay_amt;
+          if (fx_delay_amt && state_position >= fx_delay_time) {
+            rsample += synth_right_buffer[state_position - fx_delay_time] * fx_delay_amt;
+            lsample += synth_left_buffer[state_position - fx_delay_time] * fx_delay_amt;
           }
 
-          synth_out_right[i] += synth_right_buffer[i] = rsample;
-          synth_out_left[i] += synth_left_buffer[i] = lsample;
+          out_right[i] += synth_right_buffer[i] = rsample;
+          out_left[i] += synth_left_buffer[i] = lsample;
+
+          ++state_position;
         }
+
+        dv.setInt32(state_addr, state_position);
+        dv.setFloat32(state_addr + 4, state_low);
+        dv.setFloat32(state_addr + 8, state_band);
+        dv.setFloat32(state_addr + 12, c1);
+        dv.setFloat32(state_addr + 16, c2);
       }
+
+      dv.setUint8(ADDR_SONG_POSITION, song_position);
+      dv.setUint8(ADDR_PATTERN_POSITION, pattern_position);
+      dv.setUint16(ADDR_PATTERN_ROW_POSITION, pattern_row_position);
     }
   ];
 }

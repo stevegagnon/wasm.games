@@ -17,7 +17,7 @@
 
 0x0000  SPRITES                4096  256 16 byte sprites
 
-0x0000  WAVEFORMS              2048  16 waveforms each 32 x f32 values
+0x0000  WAVEFORMS              4096  16 waveforms each 64 x f32 values
 
 0x0000  SONG_LENGTH               1  u8 position to stop song
 0x0000  PATTERN_ROW_LEN           2  samples in every pattern row, calculated from BPM
@@ -29,11 +29,10 @@
 0x0000  PATTERN_POSITION          1  current row in pattern
 0x0000  PATTERN_ROW_POSITION      2  current position in pattern row
 0x0000  PLAYING_VOICE             4  16 2-bit voice status, [0] = playing, [1] = mute
-0x0000  VOICE_STATES            256  16 16 byte voice states
+0x0000  VOICE_STATES            512  16 32 byte voice states
 
 0x0000  ?FRAME_OUT             65536
 0x0000  ?AUDIO_OUT              5880  735 stereo f32 samples
-
 ```
 
 ```
@@ -77,8 +76,10 @@ FX_PAN_AMT     u8
 ```
 
 ```
-VOICE STATE 12/16 bytes
+VOICE STATE 20/32 bytes
 POSITION       i32
 LOW            f32
 BAND           f32
+PHASE_1        f32
+PHASE_2        f32
 ```
