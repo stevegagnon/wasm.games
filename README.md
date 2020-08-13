@@ -25,6 +25,7 @@
 0x0000  PATTERNS               2560  8x10x32 u8 notes
 0x0000  SONG                    384  8x48 u8 pattern indexes
 
+0x0000  SONG_STATE                1  0 = stopped, 1 = playing, 2 = repeating
 0x0000  SONG_POSITION             1  current row in song
 0x0000  PATTERN_POSITION          1  current row in pattern
 0x0000  PATTERN_ROW_POSITION      2  current position in pattern row
@@ -77,6 +78,7 @@ FX_PAN_AMT     u8
 
 ```
 VOICE STATE 20/32 bytes
+NOTE           u8
 POSITION       i32
 LOW            f32
 BAND           f32

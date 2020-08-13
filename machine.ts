@@ -5,6 +5,12 @@ const SYNTH_SAMPLES_PER = SAMPLE_RATE / 60;
 const VOICES_COUNT = 16;
 const DELAY_LINE_LENGTH = SAMPLE_RATE;
 const SONG_CHANNELS = 8;
+const ROWS_PER_PATTERN = 32;
+
+const SONG_STATE_PLAYING = 1;
+const SONG_STATE_STOPPED = 0;
+const SONG_STATE_REPEATING = 2;
+
 
 async function go(core: string) {
   const { pow, sin, random } = Math;
@@ -16,8 +22,8 @@ async function go(core: string) {
   const pallete = new Uint32Array(mem.buffer, 0xffff, 256);
   const waveforms = new Float32Array(mem.buffer, 0xffff, 512);
   const voices = new Uint8Array(mem.buffer, 0xffff, VOICES_COUNT * 32);
-  const patterns = new Uint8Array(mem.buffer, 0xffff, 8 * 10 * 32);
-  const song = new Uint8Array(mem.buffer, 0xffff, 8 * 48);
+  const patterns = new Uint8ClampedArray(mem.buffer, ADDR_PATTERNS, 8 * 10 * 32);
+  const song = new Uint8ClampedArray(mem.buffer, ADDR_SONG, 8 * 48);
 
   const delayLines = [];
   for (let i = 0; i < 32; ++i) {
@@ -90,19 +96,16 @@ async function go(core: string) {
       }
     },
     (out_left, out_right, out_length) => {
-      let 
+      let song_length = dv.getInt8(ADDR_SONG_LENGTH);
       let rowLen = dv.getUint16(ADDR_PATTERN_ROW_LEN);
       let nf = (n, oct, det, detune) => (0.00390625 * pow(1.059463094, (n + (oct - 8) * 12 + det) - 128)) * (1 + 0.0008 * detune) * WAVETABLE_SAMPLES;
 
+      let song_state = dv.getUint8(ADDR_SONG_STATE);
       let song_position = dv.getUint8(ADDR_SONG_POSITION);
       let pattern_position = dv.getUint8(ADDR_PATTERN_POSITION);
       let pattern_row_position = dv.getUint16(ADDR_PATTERN_ROW_POSITION);
 
       for (let i = 0; i < VOICES_COUNT; ++i) {
-        if (i <= SONG_CHANNELS) {
-          // add note events
-        }
-
 
         let [
           lfo_fx_freq,
@@ -158,12 +161,26 @@ async function go(core: string) {
 
         let q = fx_resonance / 255;
 
-
         let o1t = nf(n, osc1_oct, osc1_det, osc1_detune);
         let o2t = nf(n, osc2_oct, osc2_det, osc2_detune);
 
-
         for (i = 0; i < out_length; ++i) {
+          if (song_state !== SONG_STATE_STOPPED && pattern_row_position++ >= rowLen) {
+            pattern_row_position = 0;
+            if (pattern_position++ >= ROWS_PER_PATTERN) {
+              pattern_position = 0;
+              if (song_position++ >= song_length) {
+                song_position = 0;
+                if (song_state !== SONG_STATE_REPEATING) {
+                  song_state = SONG_STATE_STOPPED;
+                }
+              }
+            }
+            if (song_state !== SONG_STATE_STOPPED) {
+              let pattern = 
+            }
+          }
+
           let lfo = lfo_amt ? waveforms[lfo_waveform * WAVETABLE_SAMPLES + ((state_position * lfo_freq) & WAVETABLE_MASK)] * lfo_amt + 0.5 : 0;
 
           let s = 0;
@@ -228,6 +245,7 @@ async function go(core: string) {
         dv.setFloat32(state_addr + 16, c2);
       }
 
+      dv.setUint8(ADDR_SONG_STATE, song_state);
       dv.setUint8(ADDR_SONG_POSITION, song_position);
       dv.setUint8(ADDR_PATTERN_POSITION, pattern_position);
       dv.setUint16(ADDR_PATTERN_ROW_POSITION, pattern_row_position);
